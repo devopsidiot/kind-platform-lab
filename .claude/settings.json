@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(kubectl *)",
+      "Bash(git *)",
+      "Bash(go *)",
+      "Bash(gofmt *)",
+      "Bash(docker *)",
+      "Bash(kind *)",
+      "Bash(make *)",
+      "Bash(crossplane *)",
+      "Bash(helm *)",
+      "Bash(~/go/bin/chainsaw *)",
+      "Bash(curl *)",
+      "Bash(python3 *)",
+      "Bash(grep *)",
+      "Bash(sed *)",
+      "Bash(echo *)",
+      "Bash(cat *)",
+      "Bash(perl *)"
+    ]
+  }
+}

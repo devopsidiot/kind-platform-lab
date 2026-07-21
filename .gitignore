@@ -1,6 +1,10 @@
 # Build output
 /build/
 
+# Claude Code local overrides (personal, per-machine; shared rules live
+# in .claude/settings.json)
+/.claude/settings.local.json
+
 # macOS
 .DS_Store
 ._*
