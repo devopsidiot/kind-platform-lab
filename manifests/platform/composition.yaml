@@ -1,0 +1,18 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xappenvironments.platform.devopsidiot.io
+spec:
+  compositeTypeRef:
+    apiVersion: platform.devopsidiot.io/v1alpha1
+    kind: XAppEnvironment
+  mode: Pipeline
+  pipeline:
+    # Composes the Namespace, ConfigMap and ResourceQuota.
+    - step: compose-app-environment
+      functionRef:
+        name: function-app-environment
+    # Marks the XR ready once every composed resource is ready.
+    - step: auto-ready
+      functionRef:
+        name: function-auto-ready

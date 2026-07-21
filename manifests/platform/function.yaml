@@ -1,0 +1,26 @@
+---
+# The function image is loaded straight into the kind node with
+# `kind load docker-image`, so the kubelet must not try to pull it. Crossplane
+# itself still pulls the *package* from the local registry; see the Makefile.
+apiVersion: pkg.crossplane.io/v1beta1
+kind: DeploymentRuntimeConfig
+metadata:
+  name: local-image
+spec:
+  deploymentTemplate:
+    spec:
+      selector: {}
+      template:
+        spec:
+          containers:
+            - name: package-runtime
+              imagePullPolicy: IfNotPresent
+---
+apiVersion: pkg.crossplane.io/v1
+kind: Function
+metadata:
+  name: function-app-environment
+spec:
+  package: registry.local:5000/function-app-environment:v0.1.0
+  runtimeConfigRef:
+    name: local-image

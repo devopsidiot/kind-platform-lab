@@ -1,0 +1,29 @@
+# Crossplane's RBAC manager grants itself access to the resources defined by
+# installed providers, but not to core Kubernetes types. Composing a Namespace
+# and a ResourceQuota therefore needs an explicit grant, or the composite
+# controller fails with "failed waiting for Informer to sync" when it tries to
+# watch them.
+#
+# The label aggregates this role into the `crossplane` ClusterRole, which is the
+# supported way to extend it.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: crossplane:composed:app-environment
+  labels:
+    rbac.crossplane.io/aggregate-to-crossplane: "true"
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+      - namespaces
+      - resourcequotas
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch

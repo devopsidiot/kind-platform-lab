@@ -254,6 +254,23 @@ func TestRunFunctionIsDeterministic(t *testing.T) {
 	}
 }
 
+// The composed types are all core Kubernetes objects, which never publish a
+// Ready status condition. If the function does not assert readiness itself the
+// XR stays Ready=False forever, so every composed resource must say READY_TRUE.
+func TestRunFunctionMarksComposedResourcesReady(t *testing.T) {
+	rsp := run(t, requestFor(xrJSON("checkout", "staging")))
+
+	res := rsp.GetDesired().GetResources()
+	if len(res) == 0 {
+		t.Fatal("no composed resources to check readiness on")
+	}
+	for name, r := range res {
+		if got := r.GetReady(); got != fnv1.Ready_READY_TRUE {
+			t.Errorf("composed resource %q readiness = %v, want %v", name, got, fnv1.Ready_READY_TRUE)
+		}
+	}
+}
+
 func TestRunFunctionSetsResponseTTL(t *testing.T) {
 	rsp := run(t, requestFor(xrJSON("checkout", "sandbox")))
 	if got, want := rsp.GetMeta().GetTtl().AsDuration(), response.DefaultTTL; got != want {

@@ -109,7 +109,13 @@ func (f *Function) RunFunction(_ context.Context, req *fnv1.RunFunctionRequest) 
 			response.Fatal(rsp, errors.Wrapf(err, "cannot convert %q to composed resource", name))
 			return rsp, nil
 		}
-		desired[name] = &resource.DesiredComposed{Resource: cd}
+
+		// Mark readiness ourselves. function-auto-ready derives readiness from
+		// a Ready status condition on each composed resource, and none of the
+		// core types we compose ever publishes one, so the XR would otherwise
+		// stay Ready=False forever. A Namespace, ConfigMap and ResourceQuota
+		// are usable as soon as the API server has accepted them.
+		desired[name] = &resource.DesiredComposed{Resource: cd, Ready: resource.ReadyTrue}
 	}
 
 	if err := response.SetDesiredComposedResources(rsp, desired); err != nil {
