@@ -13,10 +13,18 @@
       "Bash(~/go/bin/chainsaw *)",
       "Bash(curl *)",
       "Bash(python3 *)",
+      "Bash(cd *)",
       "Bash(grep *)",
       "Bash(sed *)",
       "Bash(echo *)",
       "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(wc *)",
+      "Bash(tr *)",
+      "Bash(sort *)",
+      "Bash(uniq *)",
+      "Bash(cut *)",
       "Bash(perl *)"
     ]
   }
