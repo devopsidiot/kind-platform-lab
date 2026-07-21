@@ -80,3 +80,36 @@ what it needs. `make build` needs a registry because Crossplane pulls
 function packages itself and rejects image names without a registry
 host; `kind load docker-image` alone cannot satisfy it. See the README
 for why the registry is named `registry.local`.
+
+## Phase 2: LLM-backed policy validation
+
+Extend the existing composition function with an advisory policy check
+backed by a local LLM running in-cluster.
+
+### Design constraints (these are decisions, not suggestions)
+
+- **Advisory, never blocking.** A policy violation sets a Warning status
+  condition and annotates the XR. It never fails the composition and never
+  prevents resources from being composed. LLM output is non-deterministic;
+  non-determinism does not belong in an admission path.
+- **Fail open.** If the LLM is unreachable, slow, or returns unparseable
+  output, log it and compose normally. An unavailable model must never
+  break provisioning.
+- **Hard timeout.** The LLM call gets a short context deadline. Composition
+  functions run inside a reconcile loop; a slow call stalls reconciliation
+  for every XR, not just this one.
+- **Do not re-check on every reconcile.** Cache the verdict in an annotation
+  keyed by a hash of the policy-relevant spec fields. Only call the LLM when
+  that hash changes. Reconciles are frequent; LLM calls are not free.
+- **Tests never call a real model.** Unit and e2e tests use a fake LLM
+  client with fixed responses. A test suite whose outcome depends on model
+  sampling is not a test suite.
+
+### Components
+
+- Ollama Deployment, Service, ConfigMap and PVC in the cluster, model
+  pulled by an init container
+- A policy client in ./internal/policy with an interface the function
+  depends on, so tests can substitute a fake
+- Policies expressed as natural language strings in a ConfigMap, read by
+  the function at reconcile time
