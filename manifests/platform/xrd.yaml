@@ -36,6 +36,16 @@ spec:
                 - appName
                 - environment
               type: object
+              # Both fields feed the composed Namespace's name, and a Namespace
+              # cannot be renamed. Without this, editing either one leaves the
+              # old namespace in place while its quota and labels are updated
+              # to the new tier: a namespace called foo-staging holding a
+              # production quota. Reject the edit instead.
+              x-kubernetes-validations:
+                - message: appName is immutable; create a new XAppEnvironment instead
+                  rule: self.appName == oldSelf.appName
+                - message: environment is immutable; create a new XAppEnvironment instead
+                  rule: self.environment == oldSelf.environment
             status:
               properties:
                 namespace:
