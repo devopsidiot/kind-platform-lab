@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama
+  namespace: llm
+  labels:
+    app: ollama
+spec:
+  replicas: 1
+  # The model lives on a ReadWriteOnce PVC, so two pods cannot mount it at
+  # once. Recreate avoids a rolling update deadlocking on the volume.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: ollama
+  template:
+    metadata:
+      labels:
+        app: ollama
+    spec:
+      # The init container pulls the model into the shared volume before the
+      # server starts. `ollama pull` talks to a running server, so it starts
+      # one in the background, waits for it, pulls, then stops it. The main
+      # container then serves a model that is already present.
+      initContainers:
+        - name: pull-model
+          image: ollama/ollama:0.5.7
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              ollama serve &
+              pid=$!
+              echo "waiting for the background server..."
+              until ollama list >/dev/null 2>&1; do sleep 1; done
+              echo "pulling ${MODEL}..."
+              ollama pull "${MODEL}"
+              kill "${pid}"
+              wait "${pid}" 2>/dev/null || true
+              echo "done"
+          env:
+            - name: MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: ollama
+                  key: model
+          volumeMounts:
+            - name: models
+              mountPath: /root/.ollama
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 2Gi
+      containers:
+        - name: ollama
+          image: ollama/ollama:0.5.7
+          # Ollama binds 127.0.0.1 by default, which the Service cannot reach.
+          # Bind all interfaces so in-cluster clients can connect.
+          env:
+            - name: OLLAMA_HOST
+              value: 0.0.0.0:11434
+          ports:
+            - name: http
+              containerPort: 11434
+          volumeMounts:
+            - name: models
+              mountPath: /root/.ollama
+          readinessProbe:
+            httpGet:
+              path: /api/tags
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/tags
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 500m
+              # The server is light until an inference request loads the model;
+              # the limit leaves headroom for that on this single-node cluster.
+              memory: 2Gi
+            limits:
+              memory: 6Gi
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: ollama-models

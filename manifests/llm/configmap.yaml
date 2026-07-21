@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ollama
+  namespace: llm
+data:
+  # The model the init container pulls and the server then serves. Defined
+  # here so it lives in one place; the Deployment reads it from this key.
+  model: llama3.2:3b

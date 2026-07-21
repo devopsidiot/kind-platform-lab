@@ -52,8 +52,11 @@ CHAINSAW         := $(GOBIN)/chainsaw
 CHAINSAW_VERSION := v0.2.15
 
 WAIT_TIMEOUT := 5m
+# The first Ollama start pulls a ~2GB model, so it gets its own longer budget.
+LLM_NS           := llm
+LLM_WAIT_TIMEOUT := 15m
 
-.PHONY: cluster registry crossplane build deploy test e2e demo clean
+.PHONY: cluster registry crossplane llm build deploy test e2e demo clean
 
 ## cluster: create the kind cluster if it does not already exist
 cluster:
@@ -94,6 +97,17 @@ crossplane: cluster
 		--timeout $(WAIT_TIMEOUT) \
 		function.pkg.crossplane.io --all
 
+## llm: deploy Ollama and wait for it to serve the model
+#
+# The init container pulls ~2GB on first run, so readiness can take several
+# minutes. Re-runs are fast: the model persists on the PVC.
+llm: cluster
+	$(KUBECTL) apply -f manifests/llm/
+	$(KUBECTL) wait --for=condition=Available \
+		--namespace $(LLM_NS) \
+		--timeout $(LLM_WAIT_TIMEOUT) \
+		deployment/ollama
+
 ## build: build the function package and make it available to the cluster
 build: registry
 	mkdir -p $(BUILD_DIR)
@@ -112,7 +126,7 @@ build: registry
 	kind load docker-image $(FUNCTION_IMAGE) --name $(CLUSTER_NAME)
 
 ## deploy: apply RBAC, the function, XRD and Composition
-deploy: crossplane
+deploy: crossplane llm
 	$(KUBECTL) apply -f manifests/platform/rbac.yaml
 	$(KUBECTL) apply -f manifests/platform/function.yaml
 	$(KUBECTL) wait --for=condition=Healthy \
