@@ -1,0 +1,7 @@
+apiVersion: platform.devopsidiot.io/v1alpha1
+kind: XAppEnvironment
+metadata:
+  name: e2e-ledger
+spec:
+  appName: e2e-ledger
+  environment: production

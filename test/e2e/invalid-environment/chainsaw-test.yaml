@@ -1,0 +1,41 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: invalid-environment
+spec:
+  concurrent: false
+  timeouts:
+    apply: 1m
+    assert: 1m
+  steps:
+    # Schema validation is the platform's first line of defence: a bad
+    # environment must never reach the composition function.
+    - name: rejects-an-environment-outside-the-enum
+      try:
+        - apply:
+            file: xr-invalid-environment.yaml
+            expect:
+              - check:
+                  ($error != null): true
+    - name: rejects-a-missing-appname
+      try:
+        - apply:
+            file: xr-missing-appname.yaml
+            expect:
+              - check:
+                  ($error != null): true
+    # If admission had let either through, an XR would exist and the test
+    # namespaces would have been composed.
+    - name: nothing-was-created
+      try:
+        - script:
+            content: |
+              set -eu
+              if kubectl get xappenvironment e2e-rejected >/dev/null 2>&1; then
+                echo "XR e2e-rejected exists; admission did not reject it" >&2
+                exit 1
+              fi
+              if kubectl get xappenvironment e2e-rejected-no-app >/dev/null 2>&1; then
+                echo "XR e2e-rejected-no-app exists; admission did not reject it" >&2
+                exit 1
+              fi

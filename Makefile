@@ -45,9 +45,15 @@ RUNTIME_IMAGE    := $(FUNCTION_NAME)-runtime:$(FUNCTION_VERSION)
 BUILD_DIR := build
 XPKG      := $(BUILD_DIR)/$(FUNCTION_NAME).xpkg
 
+# Chainsaw is installed into GOPATH/bin rather than assumed to be on PATH, so
+# `make demo` works on a machine that only has Docker and Go.
+GOBIN            := $(shell go env GOPATH)/bin
+CHAINSAW         := $(GOBIN)/chainsaw
+CHAINSAW_VERSION := v0.2.15
+
 WAIT_TIMEOUT := 5m
 
-.PHONY: cluster registry crossplane build deploy test demo clean
+.PHONY: cluster registry crossplane build deploy test e2e demo clean
 
 ## cluster: create the kind cluster if it does not already exist
 cluster:
@@ -132,8 +138,22 @@ deploy: crossplane
 test:
 	go test ./... -count=1
 
+# Installed only when absent, so re-runs do not pay for a rebuild.
+$(CHAINSAW):
+	go install github.com/kyverno/chainsaw@$(CHAINSAW_VERSION)
+
+## e2e: Chainsaw end-to-end tests
+#
+# The XRs are cluster scoped and the tests assert on fixed namespace names, so
+# they run one at a time rather than concurrently.
+e2e: deploy $(CHAINSAW)
+	$(CHAINSAW) test \
+		--test-dir test/e2e \
+		--kube-context $(KUBE_CONTEXT) \
+		--parallel 1
+
 ## demo: everything, in order
-demo: cluster crossplane build deploy test
+demo: cluster crossplane build deploy test e2e
 
 ## clean: delete the kind cluster and the local registry
 clean:

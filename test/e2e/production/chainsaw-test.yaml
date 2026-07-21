@@ -1,0 +1,72 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: production
+spec:
+  concurrent: false
+  timeouts:
+    apply: 1m
+    assert: 5m
+    delete: 2m
+  steps:
+    - name: create-the-xr
+      try:
+        - apply:
+            file: xr.yaml
+    - name: xr-becomes-ready
+      try:
+        - assert:
+            resource:
+              apiVersion: platform.devopsidiot.io/v1alpha1
+              kind: XAppEnvironment
+              metadata:
+                name: e2e-ledger
+              status:
+                (conditions[?type == 'Ready'] | [0].status): "True"
+                (conditions[?type == 'Synced'] | [0].status): "True"
+    # The point of this test: the same Composition yields a materially larger
+    # quota than the sandbox tier.
+    - name: composes-the-production-quota
+      try:
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: ResourceQuota
+              metadata:
+                name: compute-quota
+                namespace: e2e-ledger-production
+              spec:
+                hard:
+                  limits.cpu: "32"
+                  limits.memory: 64Gi
+                  pods: "200"
+                  requests.cpu: "16"
+                  requests.memory: 32Gi
+    - name: quota-differs-from-the-sandbox-tier
+      try:
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: ResourceQuota
+              metadata:
+                name: compute-quota
+                namespace: e2e-ledger-production
+              spec:
+                hard:
+                  # Guards against the tier lookup silently collapsing to one
+                  # set of limits for every environment.
+                  (limits.cpu != '2'): true
+                  (pods != '10'): true
+    - name: composes-the-configmap
+      try:
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: e2e-ledger-config
+                namespace: e2e-ledger-production
+              data:
+                app: e2e-ledger
+                environment: production
+                tier.pods: "200"
