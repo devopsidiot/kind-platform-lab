@@ -1,14 +1,17 @@
 # kind-platform-lab
 
 A self-contained Crossplane platform demo that runs entirely on a local
-kind cluster. `make demo` should take a machine with Docker and Go from
-nothing to a working, tested Crossplane control plane.
+kind cluster. `make demo` takes a machine with the prerequisites below
+from nothing to a working, tested Crossplane control plane.
 
 ## Goal
 
 Demonstrate the full platform-engineering loop locally:
-kind cluster -> Crossplane -> custom Go composition function -> XR claim
+kind cluster -> Crossplane -> custom Go composition function -> XR
 -> composed resources -> Chainsaw e2e validation.
+
+Claims are deprecated in apiextensions.crossplane.io/v2, so the XR is
+applied directly. There is no claim in this repo.
 
 ## Stack
 
@@ -17,6 +20,23 @@ kind cluster -> Crossplane -> custom Go composition function -> XR claim
 - Go + function-sdk-go (composition function)
 - Chainsaw (end-to-end tests)
 - Make (single-command entrypoints)
+
+## Prerequisites
+
+Six tools must already be installed; the Makefile does not bootstrap
+them. Versions are what the demo was verified against.
+
+- Docker 29.6.2 - must be running; kind talks to the daemon
+- Go 1.26.5 - builds the function, installs Chainsaw
+- kind v0.32.0 - creates the cluster
+- kubectl v1.36.2
+- Helm v4.2.3 - installs Crossplane
+- crossplane CLI v2.2.0 - builds and pushes the function package
+
+`brew install go kind kubectl helm crossplane`
+
+Chainsaw is the exception: `make e2e` installs it into
+`$(go env GOPATH)/bin` on first use, so it is not a prerequisite.
 
 ## Repo conventions
 
@@ -42,13 +62,21 @@ kind cluster -> Crossplane -> custom Go composition function -> XR claim
 - Print full files rather than diffs when I ask to see code
 - Do not add dependencies without telling me why
 
-## Make targets (target state)
+## Make targets
 
 - `make cluster`    - create the kind cluster
-- `make crossplane` - install Crossplane + required functions
-- `make build`      - build and load the function image into kind
-- `make deploy`     - apply XRD, Composition, Function
+- `make registry`   - run the local OCI registry on the kind network
+- `make crossplane` - install Crossplane + function-auto-ready
+- `make build`      - build the function image and package, push the
+                      package to the registry and load the image into kind
+- `make deploy`     - apply RBAC, Function, XRD, Composition
 - `make test`       - Go unit tests
 - `make e2e`        - Chainsaw end-to-end tests
 - `make demo`       - all of the above, in order
-- `make clean`      - delete the kind cluster
+- `make clean`      - delete the cluster, the registry and build/
+
+Targets declare their own dependencies, so any one of them bootstraps
+what it needs. `make build` needs a registry because Crossplane pulls
+function packages itself and rejects image names without a registry
+host; `kind load docker-image` alone cannot satisfy it. See the README
+for why the registry is named `registry.local`.
