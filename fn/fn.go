@@ -155,8 +155,8 @@ func (f *Function) RunFunction(ctx context.Context, req *fnv1.RunFunctionRequest
 	}
 
 	// Advisory policy check. It runs after the resources are composed and never
-	// touches them: it only publishes a status condition and annotation, and it
-	// fails open, so nothing here can block provisioning.
+	// touches them: it only publishes a status condition and a cached verdict
+	// in status, and it fails open, so nothing here can block provisioning.
 	f.advisePolicy(ctx, req, rsp, xr, map[string]any{
 		pathFieldAppName:     appName,
 		pathFieldEnvironment: environment,

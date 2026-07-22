@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -12,12 +11,10 @@ import (
 )
 
 // The composition function records its advisory verdict as a PolicyCheck
-// status condition and mirrors the violations into an annotation; see
-// fn/policy.go. Status False is the advisory Warning this tool looks for.
-const (
-	policyConditionType        = "PolicyCheck"
-	annotationPolicyViolations = "platform.devopsidiot.io/policy-violations"
-)
+// status condition and caches the verdict, violations included, under
+// status.policy; see fn/policy.go. Condition status False is the advisory
+// Warning this tool looks for.
+const policyConditionType = "PolicyCheck"
 
 // policyViolation is one XR carrying the advisory Warning condition.
 type policyViolation struct {
@@ -27,7 +24,7 @@ type policyViolation struct {
 	Namespace  string `json:"namespace,omitempty"`
 	// Condition is the full PolicyCheck condition, message included.
 	Condition condition `json:"condition"`
-	// Violations is the per-policy breakdown from the function's annotation.
+	// Violations is the per-policy breakdown from the XR's status.policy cache.
 	Violations []string `json:"violations,omitempty"`
 }
 
@@ -125,8 +122,8 @@ func (i *inspector) policyViolations(ctx context.Context, lists []*metav1.APIRes
 				Namespace:  xr.GetNamespace(),
 				Condition:  *c,
 			}
-			if ann := xr.GetAnnotations()[annotationPolicyViolations]; ann != "" {
-				v.Violations = strings.Split(ann, "; ")
+			if vs, found, _ := unstructured.NestedStringSlice(xr.Object, "status", "policy", "violations"); found {
+				v.Violations = vs
 			}
 			result.Violations = append(result.Violations, v)
 		}

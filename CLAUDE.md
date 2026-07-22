@@ -98,9 +98,12 @@ backed by a local LLM running in-cluster.
 - **Hard timeout.** The LLM call gets a short context deadline. Composition
   functions run inside a reconcile loop; a slow call stalls reconciliation
   for every XR, not just this one.
-- **Do not re-check on every reconcile.** Cache the verdict in an annotation
-  keyed by a hash of the policy-relevant spec fields. Only call the LLM when
-  that hash changes. Reconciles are frequent; LLM calls are not free.
+- **Do not re-check on every reconcile.** Cache the verdict under
+  `status.policy`, keyed by a hash of the policy-relevant spec fields. Only
+  call the LLM when that hash changes. Reconciles are frequent; LLM calls are
+  not free. The cache must live in status, not annotations: Crossplane's
+  composite reconciler persists only the XR's status after the function
+  pipeline, so metadata written to the desired composite is silently dropped.
 - **Tests never call a real model.** Unit and e2e tests use a fake LLM
   client with fixed responses. A test suite whose outcome depends on model
   sampling is not a test suite.

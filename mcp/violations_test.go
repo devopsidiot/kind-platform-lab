@@ -26,18 +26,18 @@ func TestPolicyViolations(t *testing.T) {
 	violating := &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "platform.devopsidiot.io/v1alpha1",
 		"kind":       "XAppEnvironment",
-		"metadata": map[string]any{
-			"name": "bad-app",
-			"annotations": map[string]any{
-				"platform.devopsidiot.io/policy-violations": "policy 1 broken; policy 2 broken",
-			},
-		},
+		"metadata":   map[string]any{"name": "bad-app"},
 		"status": map[string]any{
 			"conditions": []any{
 				map[string]any{
 					"type": "PolicyCheck", "status": "False",
 					"reason": "PolicyViolation", "message": "policy 1 broken; policy 2 broken",
 				},
+			},
+			"policy": map[string]any{
+				"compliant":  false,
+				"hash":       "abc123",
+				"violations": []any{"policy 1 broken", "policy 2 broken"},
 			},
 		},
 	}}

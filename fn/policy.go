@@ -23,14 +23,20 @@ import (
 // ConfigMap and under which it hands it back.
 const policyConfigMapKey = "policies"
 
-// Annotations recording the last policy verdict and the hash of the
+// Status fields recording the last policy verdict and the hash of the
 // policy-relevant spec it was computed for, so the model is only called when
 // that spec changes. The compliant/violations pair also makes the verdict
 // visible on the XR without decoding anything.
+//
+// The cache lives in status, not annotations, because Crossplane's composite
+// reconciler persists only the XR's status after running the pipeline;
+// metadata written to the desired composite is silently dropped. These paths
+// must match the status schema in manifests/platform/xrd.yaml.
 const (
-	annotationPolicyHash       = "platform.devopsidiot.io/policy-hash"
-	annotationPolicyCompliant  = "platform.devopsidiot.io/policy-compliant"
-	annotationPolicyViolations = "platform.devopsidiot.io/policy-violations"
+	pathPolicyStatus     = "status.policy"
+	pathPolicyHash       = "status.policy.hash"
+	pathPolicyCompliant  = "status.policy.compliant"
+	pathPolicyViolations = "status.policy.violations"
 )
 
 // The status condition the policy check publishes on the XR. It is advisory:
@@ -153,29 +159,29 @@ func policyHash(spec map[string]any) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// cachedVerdict returns the verdict stored on the observed XR, but only if it
-// was computed for the same inputs (its hash annotation matches).
+// cachedVerdict returns the verdict stored on the observed XR's status, but
+// only if it was computed for the same inputs (its cached hash matches).
 func cachedVerdict(observed *resource.Composite, hash string) (policy.Verdict, bool) {
 	if observed == nil || observed.Resource == nil {
 		return policy.Verdict{}, false
 	}
-	ann := observed.Resource.GetAnnotations()
-	if ann[annotationPolicyHash] != hash {
+	got, err := observed.Resource.GetString(pathPolicyHash)
+	if err != nil || got != hash {
 		return policy.Verdict{}, false
 	}
-	compliant, ok := ann[annotationPolicyCompliant]
-	if !ok {
+	compliant, err := observed.Resource.GetBool(pathPolicyCompliant)
+	if err != nil {
 		return policy.Verdict{}, false
 	}
-	v := policy.Verdict{Compliant: compliant == "true"}
-	if msg := ann[annotationPolicyViolations]; msg != "" {
-		v.Violations = []string{msg}
+	v := policy.Verdict{Compliant: compliant}
+	if vs, err := observed.Resource.GetStringArray(pathPolicyViolations); err == nil {
+		v.Violations = vs
 	}
 	return v, true
 }
 
-// recordVerdict publishes the verdict as a status condition and caches it on
-// the desired XR's annotations. Any failure here is logged, not fatal.
+// recordVerdict publishes the verdict as a status condition and caches it in
+// the desired XR's status. Any failure here is logged, not fatal.
 func (f *Function) recordVerdict(req *fnv1.RunFunctionRequest, rsp *fnv1.RunFunctionResponse, observed *resource.Composite, hash string, v policy.Verdict) {
 	applyPolicyCondition(rsp, v)
 
@@ -186,7 +192,7 @@ func (f *Function) recordVerdict(req *fnv1.RunFunctionRequest, rsp *fnv1.RunFunc
 	}
 
 	// The desired XR may be empty if no earlier function populated it; seed its
-	// identity from the observed XR so Crossplane accepts the annotation write.
+	// identity from the observed XR so Crossplane accepts the status write.
 	if desired.Resource.GetKind() == "" {
 		desired.Resource.SetAPIVersion(observed.Resource.GetAPIVersion())
 		desired.Resource.SetKind(observed.Resource.GetKind())
@@ -195,19 +201,23 @@ func (f *Function) recordVerdict(req *fnv1.RunFunctionRequest, rsp *fnv1.RunFunc
 		desired.Resource.SetName(observed.Resource.GetName())
 	}
 
-	ann := desired.Resource.GetAnnotations()
-	if ann == nil {
-		ann = map[string]string{}
+	cache := map[string]any{
+		"compliant": v.Compliant,
+		"hash":      hash,
 	}
-	ann[annotationPolicyHash] = hash
-	if v.Compliant {
-		ann[annotationPolicyCompliant] = "true"
-		delete(ann, annotationPolicyViolations)
-	} else {
-		ann[annotationPolicyCompliant] = "false"
-		ann[annotationPolicyViolations] = strings.Join(v.Violations, "; ")
+	if !v.Compliant && len(v.Violations) > 0 {
+		// []any, not []string: the response is marshalled through
+		// structpb.NewStruct, which rejects typed slices.
+		vs := make([]any, 0, len(v.Violations))
+		for _, s := range v.Violations {
+			vs = append(vs, s)
+		}
+		cache["violations"] = vs
 	}
-	desired.Resource.SetAnnotations(ann)
+	if err := desired.Resource.SetValue(pathPolicyStatus, cache); err != nil {
+		f.log.Info("cannot record policy verdict on desired composite", "error", err)
+		return
+	}
 
 	if err := response.SetDesiredCompositeResource(rsp, desired); err != nil {
 		f.log.Info("cannot set desired composite with policy verdict", "error", err)

@@ -51,6 +51,26 @@ spec:
                 namespace:
                   description: Namespace composed for this app environment.
                   type: string
+                # Cached advisory policy verdict, keyed by a hash of the
+                # policy-relevant spec fields so the model is only consulted
+                # when they change. It lives in status because Crossplane
+                # persists only the XR's status after the function pipeline;
+                # annotations on the desired composite are silently dropped.
+                policy:
+                  description: Cached verdict of the advisory policy check.
+                  properties:
+                    compliant:
+                      description: Whether the spec complied with every policy.
+                      type: boolean
+                    hash:
+                      description: Hash of the spec fields the verdict was computed for.
+                      type: string
+                    violations:
+                      description: The policies the spec broke, if any.
+                      items:
+                        type: string
+                      type: array
+                  type: object
               type: object
           type: object
       served: true

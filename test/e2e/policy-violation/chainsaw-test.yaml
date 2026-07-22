@@ -62,3 +62,8 @@ spec:
                 (conditions[?type == 'Ready'] | [0].status): "True"
                 (conditions[?type == 'PolicyCheck'] | [0].status): "False"
                 (conditions[?type == 'PolicyCheck'] | [0].reason): "PolicyViolation"
+                # The verdict cache must actually persist, so the model is not
+                # re-consulted on every reconcile.
+                policy:
+                  compliant: false
+                (length(policy.hash) > `0`): true

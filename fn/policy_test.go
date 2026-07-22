@@ -54,22 +54,16 @@ func warningResults(rsp *fnv1.RunFunctionResponse) []string {
 	return msgs
 }
 
-// desiredXRAnnotations pulls the annotations off the desired composite the
-// function set, so a test can assert the verdict was recorded on it.
-func desiredXRAnnotations(rsp *fnv1.RunFunctionResponse) map[string]string {
+// desiredXRPolicyStatus pulls status.policy off the desired composite the
+// function set, so a test can assert the verdict was cached on it.
+func desiredXRPolicyStatus(rsp *fnv1.RunFunctionResponse) map[string]any {
 	r := rsp.GetDesired().GetComposite().GetResource()
 	if r == nil {
 		return nil
 	}
-	meta, _ := r.AsMap()["metadata"].(map[string]any)
-	raw, _ := meta["annotations"].(map[string]any)
-	out := make(map[string]string, len(raw))
-	for k, v := range raw {
-		if s, ok := v.(string); ok {
-			out[k] = s
-		}
-	}
-	return out
+	status, _ := r.AsMap()["status"].(map[string]any)
+	pol, _ := status["policy"].(map[string]any)
+	return pol
 }
 
 // The function must always request the policy ConfigMap, so Crossplane attaches
@@ -119,17 +113,17 @@ func TestRunFunctionPolicyCompliant(t *testing.T) {
 		t.Errorf("compliant verdict raised warnings: %v", w)
 	}
 
-	// The verdict is cached on the desired XR, keyed by the spec hash.
-	ann := desiredXRAnnotations(rsp)
+	// The verdict is cached on the desired XR's status, keyed by the spec hash.
+	pol := desiredXRPolicyStatus(rsp)
 	wantHash := policyHash(map[string]any{"appName": "checkout", "environment": "staging"})
-	if ann[annotationPolicyHash] != wantHash {
-		t.Errorf("cached hash = %q, want %q", ann[annotationPolicyHash], wantHash)
+	if pol["hash"] != wantHash {
+		t.Errorf("cached hash = %v, want %q", pol["hash"], wantHash)
 	}
-	if ann[annotationPolicyCompliant] != "true" {
-		t.Errorf("policy-compliant annotation = %q, want %q", ann[annotationPolicyCompliant], "true")
+	if pol["compliant"] != true {
+		t.Errorf("status.policy.compliant = %v, want true", pol["compliant"])
 	}
-	if _, ok := ann[annotationPolicyViolations]; ok {
-		t.Errorf("compliant verdict left a violations annotation: %q", ann[annotationPolicyViolations])
+	if _, ok := pol["violations"]; ok {
+		t.Errorf("compliant verdict left violations in status: %v", pol["violations"])
 	}
 
 	// Advisory: the resources are still composed regardless of the verdict.
@@ -165,13 +159,14 @@ func TestRunFunctionPolicyViolation(t *testing.T) {
 		t.Error("violation did not raise a warning result")
 	}
 
-	// The violation is recorded on the XR's annotations.
-	ann := desiredXRAnnotations(rsp)
-	if ann[annotationPolicyCompliant] != "false" {
-		t.Errorf("policy-compliant annotation = %q, want %q", ann[annotationPolicyCompliant], "false")
+	// The violation is recorded on the XR's status.
+	pol := desiredXRPolicyStatus(rsp)
+	if pol["compliant"] != false {
+		t.Errorf("status.policy.compliant = %v, want false", pol["compliant"])
 	}
-	if !strings.Contains(ann[annotationPolicyViolations], "sandbox tier") {
-		t.Errorf("policy-violations annotation %q does not name the violation", ann[annotationPolicyViolations])
+	violations, _ := pol["violations"].([]any)
+	if len(violations) != 1 || !strings.Contains(violations[0].(string), "sandbox tier") {
+		t.Errorf("status.policy.violations %v does not name the violation", pol["violations"])
 	}
 
 	// Never blocking: the resources are composed anyway, and nothing is fatal.
@@ -192,14 +187,9 @@ func TestRunFunctionPolicyUsesCachedVerdict(t *testing.T) {
 	xr := `{
 		"apiVersion": "platform.devopsidiot.io/v1alpha1",
 		"kind": "XAppEnvironment",
-		"metadata": {
-			"name": "checkout",
-			"annotations": {
-				"` + annotationPolicyHash + `": "` + hash + `",
-				"` + annotationPolicyCompliant + `": "true"
-			}
-		},
-		"spec": {"appName": "checkout", "environment": "staging"}
+		"metadata": {"name": "checkout"},
+		"spec": {"appName": "checkout", "environment": "staging"},
+		"status": {"policy": {"compliant": true, "hash": "` + hash + `"}}
 	}`
 
 	// Err is set so that if the function did call the model, a cache miss would
@@ -235,8 +225,8 @@ func TestRunFunctionPolicyFailsOpen(t *testing.T) {
 		t.Errorf("condition reason = %q, want %q", c.GetReason(), reasonUnavailable)
 	}
 	// No verdict is cached, so the next reconcile retries the model.
-	if ann := desiredXRAnnotations(rsp); ann[annotationPolicyHash] != "" {
-		t.Errorf("failed check cached a hash %q; want none so it retries", ann[annotationPolicyHash])
+	if pol := desiredXRPolicyStatus(rsp); len(pol) != 0 {
+		t.Errorf("failed check cached a verdict %v; want none so it retries", pol)
 	}
 	if msgs := fatalResults(rsp); len(msgs) > 0 {
 		t.Errorf("unavailable checker produced fatal results: %v", msgs)
