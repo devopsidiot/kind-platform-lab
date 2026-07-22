@@ -1,0 +1,64 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: policy-violation
+spec:
+  # The XR is cluster scoped, so it must not collide with other tests running
+  # against the same cluster.
+  concurrent: false
+  timeouts:
+    apply: 1m
+    # The policy check calls a real in-cluster model. The first inference loads
+    # the model weights, during which the call times out and fails open and is
+    # retried, so the verdict can take a few minutes to settle.
+    assert: 10m
+    delete: 2m
+  steps:
+    - name: create-the-xr
+      try:
+        - apply:
+            file: xr.yaml
+    # Advisory, never blocking: a policy violation must not stop composition, so
+    # all three resources are created regardless of the verdict. This holds even
+    # if the model is slow and the check is still failing open.
+    - name: composes-all-three-resources
+      try:
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Namespace
+              metadata:
+                name: app-production
+                labels:
+                  platform.devopsidiot.io/app: app
+                  platform.devopsidiot.io/environment: production
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: app-config
+                namespace: app-production
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: ResourceQuota
+              metadata:
+                name: compute-quota
+                namespace: app-production
+    # The real model flags the forbidden production name, so the function
+    # publishes a False PolicyCheck condition - the advisory warning. The XR is
+    # still Ready: the warning never blocks. We assert the condition and its
+    # status and reason, never the model's exact wording.
+    - name: carries-the-warning-condition
+      try:
+        - assert:
+            resource:
+              apiVersion: platform.devopsidiot.io/v1alpha1
+              kind: XAppEnvironment
+              metadata:
+                name: app
+              status:
+                (conditions[?type == 'Ready'] | [0].status): "True"
+                (conditions[?type == 'PolicyCheck'] | [0].status): "False"
+                (conditions[?type == 'PolicyCheck'] | [0].reason): "PolicyViolation"

@@ -1,0 +1,11 @@
+# A production app whose name is a placeholder the app-policies ConfigMap
+# explicitly forbids in production ("x", "app", "test"). The real in-cluster
+# model should flag it, and the function should raise an advisory warning
+# without blocking composition.
+apiVersion: platform.devopsidiot.io/v1alpha1
+kind: XAppEnvironment
+metadata:
+  name: app
+spec:
+  appName: app
+  environment: production
