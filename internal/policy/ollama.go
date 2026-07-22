@@ -54,10 +54,88 @@ type generateResponse struct {
 // llmVerdict is the schema we ask the model to fill in. It mirrors Verdict but
 // stays separate so the model's field names are decoupled from our exported
 // type.
+//
+// Reasoning and violations use flexible types because models drift from the
+// requested schema (e.g. "reasoning": [] instead of a string), and a shape
+// mismatch on an advisory text field should not discard an otherwise usable
+// verdict. Compliant stays a strict bool: it is the load-bearing field, and
+// if the model cannot produce it the whole verdict fails open as before.
 type llmVerdict struct {
-	Compliant  bool     `json:"compliant"`
-	Violations []string `json:"violations"`
-	Reasoning  string   `json:"reasoning"`
+	Compliant  bool        `json:"compliant"`
+	Violations flexStrings `json:"violations"`
+	Reasoning  flexString  `json:"reasoning"`
+}
+
+// flexString unmarshals a JSON value the model was asked to return as a
+// string but may not have: a string is taken as-is, an array is stringified
+// element-wise and joined, and anything else keeps its raw JSON text. It
+// never returns an error.
+type flexString string
+
+func (f *flexString) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		*f = flexString(s)
+		return nil
+	}
+	var arr []any
+	if err := json.Unmarshal(data, &arr); err == nil {
+		parts := make([]string, 0, len(arr))
+		for _, e := range arr {
+			parts = append(parts, stringify(e))
+		}
+		*f = flexString(strings.Join(parts, " "))
+		return nil
+	}
+	*f = flexString(data)
+	return nil
+}
+
+// flexStrings unmarshals a JSON value the model was asked to return as an
+// array of strings but may not have: array elements are stringified, a bare
+// string becomes a one-element slice, and anything else keeps its raw JSON
+// text. It never returns an error.
+type flexStrings []string
+
+func (f *flexStrings) UnmarshalJSON(data []byte) error {
+	// A JSON null also lands here: it decodes as a nil slice.
+	var arr []any
+	if err := json.Unmarshal(data, &arr); err == nil {
+		if len(arr) == 0 {
+			*f = nil
+			return nil
+		}
+		out := make(flexStrings, 0, len(arr))
+		for _, e := range arr {
+			out = append(out, stringify(e))
+		}
+		*f = out
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		if s == "" {
+			*f = nil
+			return nil
+		}
+		*f = flexStrings{s}
+		return nil
+	}
+	*f = flexStrings{string(data)}
+	return nil
+}
+
+// stringify renders a decoded JSON value as a string: strings as-is,
+// everything else re-encoded as compact JSON.
+func stringify(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Sprintf("%v", v)
+	}
+	return string(b)
 }
 
 // Check evaluates spec against policies by asking the model for a JSON verdict.
@@ -134,8 +212,8 @@ func (o *Ollama) Check(ctx context.Context, spec map[string]any, policies []stri
 
 	return Verdict{
 		Compliant:  v.Compliant,
-		Violations: v.Violations,
-		Reasoning:  v.Reasoning,
+		Violations: []string(v.Violations),
+		Reasoning:  string(v.Reasoning),
 	}, nil
 }
 

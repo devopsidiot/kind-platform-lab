@@ -91,6 +91,56 @@ func TestOllamaCompliantVerdict(t *testing.T) {
 	}
 }
 
+// Models drift from the requested schema on the advisory text fields. Those
+// shapes must still parse; only the compliant bool is strict.
+func TestOllamaToleratesVerdictShapeDrift(t *testing.T) {
+	cases := map[string]struct {
+		verdictJSON string
+		want        Verdict
+	}{
+		// Observed live: llama3.2 returned reasoning as an empty array.
+		"ReasoningEmptyArray": {
+			verdictJSON: `{"compliant": false, "violations": ["policy 1"], "reasoning": []}`,
+			want:        Verdict{Compliant: false, Violations: []string{"policy 1"}},
+		},
+		"ReasoningArrayOfStrings": {
+			verdictJSON: `{"compliant": true, "violations": [], "reasoning": ["all fields comply", "nothing to flag"]}`,
+			want:        Verdict{Compliant: true, Reasoning: "all fields comply nothing to flag"},
+		},
+		"ReasoningNull": {
+			verdictJSON: `{"compliant": true, "violations": [], "reasoning": null}`,
+			want:        Verdict{Compliant: true},
+		},
+		"ViolationsBareString": {
+			verdictJSON: `{"compliant": false, "violations": "policy 2 broken", "reasoning": "bad tier"}`,
+			want:        Verdict{Compliant: false, Violations: []string{"policy 2 broken"}, Reasoning: "bad tier"},
+		},
+		"ViolationsNull": {
+			verdictJSON: `{"compliant": true, "violations": null, "reasoning": "clean"}`,
+			want:        Verdict{Compliant: true, Reasoning: "clean"},
+		},
+		"ViolationsArrayOfObjects": {
+			verdictJSON: `{"compliant": false, "violations": [{"policy": 1}], "reasoning": "x"}`,
+			want:        Verdict{Compliant: false, Violations: []string{`{"policy":1}`}, Reasoning: "x"},
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			o := stubOllama(t, func(w http.ResponseWriter, r *http.Request) {
+				generateReply(w, tc.verdictJSON)
+			})
+			got, err := o.Check(context.Background(), map[string]any{"environment": "sandbox"}, []string{"policy"})
+			if err != nil {
+				t.Fatalf("Check returned unexpected error: %v", err)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("verdict mismatch: -want +got:\n%s", diff)
+			}
+		})
+	}
+}
+
 // No policies configured is a clean pass that never touches the network.
 func TestOllamaNoPoliciesSkipsCall(t *testing.T) {
 	o := stubOllama(t, func(w http.ResponseWriter, r *http.Request) {
