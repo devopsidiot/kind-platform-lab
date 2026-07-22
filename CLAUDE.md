@@ -113,3 +113,36 @@ backed by a local LLM running in-cluster.
   depends on, so tests can substitute a fake
 - Policies expressed as natural language strings in a ConfigMap, read by
   the function at reconcile time
+
+## Phase 3: MCP server for cluster inspection
+
+A read-only MCP server under ./mcp that exposes this cluster's Crossplane
+state as tools an MCP client (Claude Desktop) can call.
+
+### Design constraints
+
+- **Read-only. No exceptions.** Every tool inspects; none mutate. No apply,
+  no delete, no patch, no scale. This is an observability surface, not a
+  control surface. The safety of the whole thing rests on this.
+- **stdio transport.** Claude Desktop spawns the binary as a child process
+  and talks over stdin/stdout. All logging goes to stderr — anything on
+  stdout corrupts the JSON-RPC stream.
+- **Reuses the cluster's kubeconfig.** The server shells out to kubectl or
+  uses client-go against the current context. It does not manage its own
+  credentials.
+- **Structured returns.** Tools return JSON the model can reason over, not
+  pre-formatted prose. Let Claude do the summarizing.
+- **Bounded output.** Log and describe tools cap what they return (tail N
+  lines, last N events) so a single call can't flood the context.
+
+### Tools (mirror the cluster-diagnostician subagent)
+
+- get_xr_status         - XR sync/ready conditions + composed resource health
+- get_composition_pipeline - the pipeline steps for a given composition
+- list_policy_violations - XRs carrying the advisory Warning condition
+- get_function_logs     - tail logs from the composition function pod
+
+### Stack
+
+- Go, github.com/mark3labs/mcp-go
+- client-go or shelling out to kubectl for cluster queries
