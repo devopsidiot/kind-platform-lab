@@ -25,7 +25,9 @@
       "Bash(sort *)",
       "Bash(uniq *)",
       "Bash(cut *)",
-      "Bash(perl *)"
+      "Bash(perl *)",
+      "Bash(awk *)",
+      "Bash(ls *)"
     ]
   }
 }
