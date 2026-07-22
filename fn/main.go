@@ -7,6 +7,8 @@ import (
 	"os"
 
 	function "github.com/crossplane/function-sdk-go"
+
+	"github.com/devopsidiot/kind-platform-lab/internal/policy"
 )
 
 // envOr returns the value of the environment variable, or fallback if unset.
@@ -40,8 +42,18 @@ func main() {
 		log.Fatalf("cannot create logger: %v", err)
 	}
 
+	// The advisory policy check talks to the in-cluster Ollama Service. All of
+	// this is environment-configured, matching how Crossplane runs the function.
+	checker := &policy.Ollama{
+		BaseURL: envOr("OLLAMA_URL", "http://ollama.llm.svc.cluster.local:11434"),
+		Model:   envOr("OLLAMA_MODEL", "llama3.2:3b"),
+	}
+	fn := NewFunction(logger, checker)
+	fn.policyConfigMapName = envOr("POLICY_CONFIGMAP_NAME", defaultPolicyConfigMapName)
+	fn.policyConfigMapNamespace = envOr("POLICY_CONFIGMAP_NAMESPACE", defaultPolicyConfigMapNamespace)
+
 	if err := function.Serve(
-		NewFunction(logger),
+		fn,
 		function.Listen(function.DefaultNetwork, *address),
 		function.MTLSCertificates(*certsDir),
 		function.Insecure(*insecure),

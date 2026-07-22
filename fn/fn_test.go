@@ -12,6 +12,8 @@ import (
 	fnv1 "github.com/crossplane/function-sdk-go/proto/v1"
 	"github.com/crossplane/function-sdk-go/resource"
 	"github.com/crossplane/function-sdk-go/response"
+
+	"github.com/devopsidiot/kind-platform-lab/internal/policy"
 )
 
 // xrJSON builds the observed XR JSON for an app and environment.
@@ -33,10 +35,18 @@ func requestFor(xr string) *fnv1.RunFunctionRequest {
 	}
 }
 
-// run invokes the function, failing the test on transport-level errors.
+// run invokes the function with a compliant fake checker, failing the test on
+// transport-level errors. Tests never call a real model.
 func run(t *testing.T, req *fnv1.RunFunctionRequest) *fnv1.RunFunctionResponse {
 	t.Helper()
-	rsp, err := NewFunction(logging.NewNopLogger()).RunFunction(context.Background(), req)
+	return runWith(t, req, &policy.Fake{Verdict: policy.Verdict{Compliant: true}})
+}
+
+// runWith invokes the function with a specific checker, so policy tests can
+// drive the compliant, violating, and unavailable paths.
+func runWith(t *testing.T, req *fnv1.RunFunctionRequest, checker policy.Checker) *fnv1.RunFunctionResponse {
+	t.Helper()
+	rsp, err := NewFunction(logging.NewNopLogger(), checker).RunFunction(context.Background(), req)
 	if err != nil {
 		t.Fatalf("RunFunction() returned an unexpected error: %v", err)
 	}

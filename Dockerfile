@@ -12,6 +12,8 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY fn/ fn/
+# The function imports the advisory policy client from ./internal/policy.
+COPY internal/ internal/
 
 # CGO_ENABLED=0 keeps the binary static so it runs on a distroless base.
 ARG TARGETOS=linux

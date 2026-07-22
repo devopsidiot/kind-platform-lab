@@ -15,6 +15,8 @@ import (
 	"github.com/crossplane/function-sdk-go/resource"
 	"github.com/crossplane/function-sdk-go/resource/composed"
 	"github.com/crossplane/function-sdk-go/response"
+
+	"github.com/devopsidiot/kind-platform-lab/internal/policy"
 )
 
 // Composed resource names. These are the keys Crossplane uses to correlate
@@ -31,6 +33,13 @@ const (
 	pathEnvironment = "spec.environment"
 )
 
+// Spec field names, used as the keys of the policy-relevant spec map handed to
+// the policy checker.
+const (
+	pathFieldAppName     = "appName"
+	pathFieldEnvironment = "environment"
+)
+
 // Labels applied to every composed resource, so an operator can trace a
 // resource back to the XR that produced it.
 const (
@@ -44,21 +53,43 @@ func init() {
 	_ = corev1.AddToScheme(composed.Scheme)
 }
 
+// Default location of the ConfigMap holding natural-language policies. main
+// overrides these from the environment.
+const (
+	defaultPolicyConfigMapName      = "app-policies"
+	defaultPolicyConfigMapNamespace = "crossplane-system"
+)
+
 // Function composes the resources backing an XAppEnvironment.
 type Function struct {
 	fnv1.UnimplementedFunctionRunnerServiceServer
 
 	log logging.Logger
+
+	// checker runs the advisory policy check. It is an interface so tests
+	// substitute a fake and never call a real model.
+	checker policy.Checker
+
+	// policyConfigMap{Name,Namespace} identify the ConfigMap of policies that
+	// Crossplane fetches for us as an extra resource.
+	policyConfigMapName      string
+	policyConfigMapNamespace string
 }
 
-// NewFunction returns a Function that logs to the supplied logger.
-func NewFunction(log logging.Logger) *Function {
-	return &Function{log: log}
+// NewFunction returns a Function that logs to the supplied logger and runs the
+// advisory policy check through checker.
+func NewFunction(log logging.Logger, checker policy.Checker) *Function {
+	return &Function{
+		log:                      log,
+		checker:                  checker,
+		policyConfigMapName:      defaultPolicyConfigMapName,
+		policyConfigMapNamespace: defaultPolicyConfigMapNamespace,
+	}
 }
 
 // RunFunction composes a Namespace, a ConfigMap and a ResourceQuota for the
 // XAppEnvironment in the request. The quota is tiered by spec.environment.
-func (f *Function) RunFunction(_ context.Context, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error) {
+func (f *Function) RunFunction(ctx context.Context, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error) {
 	rsp := response.To(req, response.DefaultTTL)
 
 	xr, err := request.GetObservedCompositeResource(req)
@@ -122,6 +153,14 @@ func (f *Function) RunFunction(_ context.Context, req *fnv1.RunFunctionRequest) 
 		response.Fatal(rsp, errors.Wrap(err, "cannot set desired composed resources"))
 		return rsp, nil
 	}
+
+	// Advisory policy check. It runs after the resources are composed and never
+	// touches them: it only publishes a status condition and annotation, and it
+	// fails open, so nothing here can block provisioning.
+	f.advisePolicy(ctx, req, rsp, xr, map[string]any{
+		pathFieldAppName:     appName,
+		pathFieldEnvironment: environment,
+	})
 
 	f.log.Debug("Composed app environment", "app", appName, "environment", environment, "namespace", namespace)
 	response.Normalf(rsp, "Composed %s environment for app %q in namespace %q", environment, appName, namespace)
