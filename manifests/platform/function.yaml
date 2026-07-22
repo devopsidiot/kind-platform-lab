@@ -15,6 +15,24 @@ spec:
           containers:
             - name: package-runtime
               imagePullPolicy: IfNotPresent
+              # Advisory policy check configuration. These match the function's
+              # own defaults; they are set explicitly so the wiring is visible
+              # and an operator can retarget it without rebuilding the image.
+              env:
+                # The in-cluster Ollama Service (manifests/llm/service.yaml).
+                - name: OLLAMA_URL
+                  value: http://ollama.llm.svc.cluster.local:11434
+                # Keep in sync with the model in manifests/llm/configmap.yaml.
+                # The function runs in crossplane-system and cannot read a
+                # ConfigMap in the llm namespace, so the value is repeated here.
+                - name: OLLAMA_MODEL
+                  value: llama3.2:3b
+                # The ConfigMap of natural-language policies the function reads
+                # as an extra resource (manifests/platform/policies.yaml).
+                - name: POLICY_CONFIGMAP_NAME
+                  value: app-policies
+                - name: POLICY_CONFIGMAP_NAMESPACE
+                  value: crossplane-system
 ---
 apiVersion: pkg.crossplane.io/v1
 kind: Function

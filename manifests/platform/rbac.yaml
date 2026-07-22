@@ -4,6 +4,11 @@
 # controller fails with "failed waiting for Informer to sync" when it tries to
 # watch them.
 #
+# The configmaps grant does double duty: the function composes a ConfigMap, and
+# Crossplane also uses get/list/watch on configmaps to fetch the policy
+# ConfigMap the function requests as an extra resource (manifests/platform/
+# policies.yaml), so no separate rule is needed for that read.
+#
 # The label aggregates this role into the `crossplane` ClusterRole, which is the
 # supported way to extend it.
 apiVersion: rbac.authorization.k8s.io/v1

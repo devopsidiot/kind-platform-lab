@@ -1,0 +1,27 @@
+# Natural-language policies the composition function checks each XR against.
+#
+# The function reads this ConfigMap at reconcile time (Crossplane fetches it as
+# an extra resource; see fn/policy.go) and treats every value under data as one
+# policy. The check is advisory: a violation annotates the XR and sets a
+# PolicyCheck condition, but never blocks provisioning.
+#
+# It lives in crossplane-system so the aggregated `crossplane` ClusterRole,
+# which already grants get/list/watch on configmaps, can read it. The name and
+# namespace must match POLICY_CONFIGMAP_NAME / POLICY_CONFIGMAP_NAMESPACE in
+# manifests/platform/function.yaml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-policies
+  namespace: crossplane-system
+data:
+  naming: |
+    Application names must be lowercase and may contain only letters, digits
+    and hyphens. They must not start or end with a hyphen.
+  environments: |
+    The environment must be exactly one of "sandbox", "staging" or
+    "production".
+  production-naming: |
+    An application deployed to the "production" environment must have a
+    descriptive name of at least three characters. Placeholder names such as
+    "x", "app" or "test" are not acceptable in production.

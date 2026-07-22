@@ -125,9 +125,10 @@ build: registry
 	docker tag "$$id" $(FUNCTION_IMAGE)
 	kind load docker-image $(FUNCTION_IMAGE) --name $(CLUSTER_NAME)
 
-## deploy: apply RBAC, the function, XRD and Composition
+## deploy: apply RBAC, policies, the function, XRD and Composition
 deploy: crossplane llm
 	$(KUBECTL) apply -f manifests/platform/rbac.yaml
+	$(KUBECTL) apply -f manifests/platform/policies.yaml
 	$(KUBECTL) apply -f manifests/platform/function.yaml
 	$(KUBECTL) wait --for=condition=Healthy \
 		--timeout $(WAIT_TIMEOUT) \
