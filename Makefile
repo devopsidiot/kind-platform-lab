@@ -56,7 +56,7 @@ WAIT_TIMEOUT := 5m
 LLM_NS           := llm
 LLM_WAIT_TIMEOUT := 15m
 
-.PHONY: cluster registry crossplane llm build deploy test e2e demo clean
+.PHONY: cluster registry crossplane llm build mcp-build deploy test e2e demo clean
 
 ## cluster: create the kind cluster if it does not already exist
 cluster:
@@ -124,6 +124,11 @@ build: registry
 	if [ -z "$$id" ]; then echo "could not determine loaded image id" >&2; exit 1; fi; \
 	docker tag "$$id" $(FUNCTION_IMAGE)
 	kind load docker-image $(FUNCTION_IMAGE) --name $(CLUSTER_NAME)
+
+## mcp-build: build the MCP server binary
+mcp-build:
+	mkdir -p $(BUILD_DIR)
+	go build -o $(BUILD_DIR)/mcp-server ./mcp
 
 ## deploy: apply RBAC, policies, the function, XRD and Composition
 deploy: crossplane llm
