@@ -25,7 +25,17 @@ make mcp-build   # builds ./build/mcp-server
 
 ## Register with Claude Desktop
 
-Edit the config file at:
+One command:
+
+```sh
+make mcp-register   # builds the binary and merges it into the config below
+```
+
+It merges rather than overwrites, so existing servers and preferences
+survive; the previous config is kept alongside as `.bak`. Restart Claude
+Desktop afterwards.
+
+To do the same by hand instead, edit the config file at:
 
 ```
 ~/Library/Application Support/Claude/claude_desktop_config.json

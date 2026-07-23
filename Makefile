@@ -56,7 +56,7 @@ WAIT_TIMEOUT := 5m
 LLM_NS           := llm
 LLM_WAIT_TIMEOUT := 15m
 
-.PHONY: cluster registry crossplane llm build mcp-build deploy test e2e demo clean
+.PHONY: cluster registry crossplane llm build mcp-build mcp-register deploy test e2e demo clean
 
 ## cluster: create the kind cluster if it does not already exist
 cluster:
@@ -129,6 +129,38 @@ build: registry
 mcp-build:
 	mkdir -p $(BUILD_DIR)
 	go build -o $(BUILD_DIR)/mcp-server ./mcp
+
+# Claude Desktop's config file on macOS. mcp-register merges into it rather
+# than overwriting, so other servers and preferences survive; the previous
+# version is kept alongside as .bak.
+CLAUDE_DESKTOP_CONFIG := $(HOME)/Library/Application Support/Claude/claude_desktop_config.json
+
+define MCP_REGISTER_PY
+import json, os, shutil, sys
+
+path, binary = sys.argv[1], sys.argv[2]
+cfg = {}
+if os.path.exists(path):
+    shutil.copy2(path, path + ".bak")
+    with open(path) as f:
+        cfg = json.load(f)
+cfg.setdefault("mcpServers", {})["kind-platform-lab"] = {
+    "command": binary,
+    # Claude Desktop spawns servers with a minimal environment; this PATH is
+    # where Homebrew installs kubectl. See mcp/README.md.
+    "env": {"PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"},
+}
+os.makedirs(os.path.dirname(path), exist_ok=True)
+with open(path, "w") as f:
+    json.dump(cfg, f, indent=2)
+print("registered kind-platform-lab -> " + binary)
+print("restart Claude Desktop (Cmd+Q, reopen) to pick it up")
+endef
+export MCP_REGISTER_PY
+
+## mcp-register: register the MCP server with Claude Desktop (macOS)
+mcp-register: mcp-build
+	@python3 -c "$$MCP_REGISTER_PY" "$(CLAUDE_DESKTOP_CONFIG)" "$(CURDIR)/$(BUILD_DIR)/mcp-server"
 
 ## deploy: apply RBAC, policies, the function, XRD and Composition
 deploy: crossplane llm
